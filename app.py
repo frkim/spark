@@ -90,42 +90,88 @@ STEP_ICONS = {
     "publication": "📤",
 }
 
+STEP_LABEL = dict(STEPS)
 
-def _run_pipeline(user_query: str) -> tuple[dict[str, Any], dict]:
-    """Execute the pipeline synchronously (called from Streamlit)."""
+if run_btn and query:
+    from observability import PipelineTracer
+
+    progress_bar = st.progress(0, text="Initialising pipeline…")
+    status_ui = st.status("Running pipeline…", expanded=True)
+
     pipeline = ProductContentPipeline()
-
-    step_results: dict[str, Any] = {}
-
-    def on_step(key: str, status: str, data: dict | None = None) -> None:
-        if data:
-            step_results[key] = data
-
+    tracer = PipelineTracer()
+    ctx: dict[str, Any] = {"run_id": tracer.run_id, "user_query": query}
+    total = len(STEPS)
     loop = asyncio.new_event_loop()
+
     try:
-        ctx, tracer = loop.run_until_complete(
-            pipeline.run(user_query, on_step=on_step)
-        )
+        # --- Sequential stages 1-4 ----------------------------------------
+        seq_agents = [
+            ("smart_query_intake", "intake", pipeline.intake),
+            ("foundry_iq_retrieval", "retrieval", pipeline.retrieval),
+            ("normalization", "normalization", pipeline.normalization),
+            ("product_enrichment", "enrichment", pipeline.enrichment),
+        ]
+        step_idx = 0
+        for key, ctx_key, agent in seq_agents:
+            icon = STEP_ICONS[key]
+            label = STEP_LABEL[key]
+            progress_bar.progress(step_idx / total, text=f"{icon} {label}…")
+            status_ui.write(f"{icon} **{label}** — running…")
+            ctx[ctx_key] = loop.run_until_complete(agent.run(ctx, tracer))
+            has_err = isinstance(ctx[ctx_key], dict) and "error" in ctx[ctx_key]
+            status_ui.write(f"{'❌' if has_err else '✅'} **{label}** — done")
+            step_idx += 1
+
+        # --- Parallel stages 5 & 6 (SEO + Multilingual) -------------------
+        progress_bar.progress(step_idx / total, text=f"📈 SEO + 🌍 Multilingual (parallel)…")
+        status_ui.write("📈🌍 **SEO + Multilingual** — running in parallel…")
+
+        async def _parallel_seo_ml():
+            return await asyncio.gather(
+                pipeline.seo.run(ctx, tracer),
+                pipeline.multilingual.run(ctx, tracer),
+            )
+
+        seo_result, ml_result = loop.run_until_complete(_parallel_seo_ml())
+        ctx["seo"] = seo_result
+        ctx["multilingual"] = ml_result
+        seo_err = isinstance(seo_result, dict) and "error" in seo_result
+        ml_err = isinstance(ml_result, dict) and "error" in ml_result
+        status_ui.write(f"{'❌' if seo_err else '✅'} **SEO Generation** — done")
+        status_ui.write(f"{'❌' if ml_err else '✅'} **Multilingual Generation** — done")
+        step_idx += 2
+
+        # --- Sequential stages 7-8 ----------------------------------------
+        tail_agents = [
+            ("quality_compliance", "quality", pipeline.quality),
+            ("publication", "publication", pipeline.publication),
+        ]
+        for key, ctx_key, agent in tail_agents:
+            icon = STEP_ICONS[key]
+            label = STEP_LABEL[key]
+            progress_bar.progress(step_idx / total, text=f"{icon} {label}…")
+            status_ui.write(f"{icon} **{label}** — running…")
+            ctx[ctx_key] = loop.run_until_complete(agent.run(ctx, tracer))
+            has_err = isinstance(ctx[ctx_key], dict) and "error" in ctx[ctx_key]
+            status_ui.write(f"{'❌' if has_err else '✅'} **{label}** — done")
+            step_idx += 1
+
     finally:
         loop.close()
 
-    return ctx, tracer.summary()
+    # --- Store results & finish UI -----------------------------------------
+    trace = tracer.summary()
+    st.session_state.pipeline_result = ctx
+    st.session_state.trace = trace
 
-
-if run_btn and query:
-    with st.status("Running pipeline…", expanded=True) as status_ui:
-        for key, label in STEPS:
-            st.write(f"{STEP_ICONS.get(key, '•')} {label}…")
-
-        ctx, trace = _run_pipeline(query)
-        st.session_state.pipeline_result = ctx
-        st.session_state.trace = trace
-
-        errors = [k for k in ctx if isinstance(ctx[k], dict) and "error" in ctx[k]]
-        if errors:
-            status_ui.update(label="Pipeline completed with errors", state="error")
-        else:
-            status_ui.update(label="Pipeline complete!", state="complete")
+    errors = [k for k in ctx if isinstance(ctx[k], dict) and "error" in ctx[k]]
+    if errors:
+        progress_bar.progress(1.0, text="⚠️ Pipeline completed with errors")
+        status_ui.update(label="Pipeline completed with errors", state="error")
+    else:
+        progress_bar.progress(1.0, text="✅ Pipeline complete!")
+        status_ui.update(label=f"Pipeline complete — {trace['total_latency_ms']:.0f} ms, {trace['total_tokens']} tokens", state="complete")
 
 # ---------------------------------------------------------------------------
 # Results display
