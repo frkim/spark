@@ -92,6 +92,44 @@ The pipeline follows a hybrid execution model: **sequential → parallel → seq
 └──────────────────────────────────────────────────────┘
 ```
 
+### Pipeline Flow Diagram
+
+```mermaid
+graph TD
+    U([User Query]) --> S1
+
+    subgraph SEQ1["Sequential Stages 1–4"]
+        S1["1 · Smart Query Intake<br/><i>query_intake.py</i>"]
+        S2["2 · Foundry IQ Retrieval<br/><i>retrieval.py</i>"]
+        S3["3 · Normalization<br/><i>normalization.py</i>"]
+        S4["4 · Product Enrichment<br/><i>enrichment.py</i>"]
+        S1 --> S2 --> S3 --> S4
+    end
+
+    S4 --> S5 & S6
+
+    subgraph PAR["Parallel Stages 5 & 6  (asyncio.gather)"]
+        S5["5 · SEO Generation<br/><i>seo.py</i>"]
+        S6["6 · Multilingual Generation<br/><i>multilingual.py</i>"]
+    end
+
+    S5 & S6 --> S7
+
+    subgraph SEQ2["Sequential Stages 7–8"]
+        S7["7 · Quality & Compliance<br/><i>quality.py</i>"]
+        S8["8 · Publication Formatting<br/><i>publication.py</i>"]
+        S7 --> S8
+    end
+
+    S8 --> OUT([Enriched Product Content])
+
+    style SEQ1 fill:#e8f4fd,stroke:#4a90d9
+    style PAR  fill:#fef9e7,stroke:#f5b041
+    style SEQ2 fill:#eafaf1,stroke:#58d68d
+    style U    fill:#d5f5e3,stroke:#27ae60
+    style OUT  fill:#d5f5e3,stroke:#27ae60
+```
+
 ---
 
 ## Agent Architecture
