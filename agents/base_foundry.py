@@ -1,4 +1,11 @@
-"""Base agent — runs on Azure AI Foundry Agent Service via azure-ai-agents SDK."""
+"""Base agent — runs on the new Microsoft Foundry Agent Service experience.
+
+Uses the Responses API (azure-ai-projects ≥ 2.0) instead of the deprecated
+Assistants/classic agents API.  Agents created this way appear under
+Build → Agents in the Foundry portal.
+
+Reference: https://learn.microsoft.com/azure/foundry/agents/how-to/migrate
+"""
 
 from __future__ import annotations
 
@@ -7,12 +14,8 @@ import json
 import logging
 from typing import Any
 
-from azure.ai.agents import AgentsClient
-from azure.ai.agents.models import (
-    AgentThreadCreationOptions,
-    MessageRole,
-    ThreadMessageOptions,
-)
+from azure.ai.projects import AIProjectClient
+from azure.ai.projects.models import PromptAgentDefinition
 from azure.identity import DefaultAzureCredential
 
 from config import settings
@@ -20,45 +23,54 @@ from observability import PipelineTracer, TraceSpan
 
 logger = logging.getLogger(__name__)
 
-_client_cache: AgentsClient | None = None
+_project_cache: AIProjectClient | None = None
 
 
-def _get_foundry_client() -> AgentsClient:
-    global _client_cache
-    if _client_cache is None:
-        _client_cache = AgentsClient(
+def _get_foundry_client() -> AIProjectClient:
+    """Return a cached AIProjectClient (used for agent CRUD)."""
+    global _project_cache
+    if _project_cache is None:
+        _project_cache = AIProjectClient(
             endpoint=settings.foundry_project_endpoint,
             credential=DefaultAzureCredential(),
         )
-    return _client_cache
+    return _project_cache
 
 
 class FoundryAgent:
-    """A single-purpose agent that runs on Azure AI Foundry Agent Service.
+    """A single-purpose agent that runs on the new Foundry Agent Service.
 
-    Each call creates a hosted agent, creates a thread with the user message,
-    runs the agent, retrieves the response, and cleans up.
+    Lifecycle per call:
+    1. ``create_version`` — register (or reuse) the agent definition.
+    2. ``conversations.create`` — open a conversation with the user message.
+    3. ``responses.create`` — invoke the agent via the Responses API.
+    4. Parse the JSON output.
     """
 
-    name: str = "base_foundry_agent"
+    name: str = "base-foundry-agent"
     instructions: str = "You are a helpful assistant. Return valid JSON only."
 
-    def __init__(self, client: AgentsClient | None = None) -> None:
-        self.client = client or _get_foundry_client()
-        self._agent_id: str | None = None
+    def __init__(self, client: AIProjectClient | None = None) -> None:
+        self.project = client or _get_foundry_client()
+        self.openai = self.project.get_openai_client()
+        self._agent_name: str | None = None
 
     def _ensure_agent(self) -> str:
-        """Create (or reuse) the hosted agent definition."""
-        if self._agent_id is None:
-            agent = self.client.create_agent(
-                model=settings.azure_openai_model,
-                name=self.name,
-                instructions=self.instructions,
-                temperature=0.3,
+        """Create (or reuse) the prompt-agent version and return its name."""
+        if self._agent_name is None:
+            agent = self.project.agents.create_version(
+                agent_name=self.name,
+                definition=PromptAgentDefinition(
+                    model=settings.azure_openai_model,
+                    instructions=self.instructions,
+                    temperature=0.3,
+                ),
             )
-            self._agent_id = agent.id
-            logger.info("Created Foundry agent %s -> %s", self.name, self._agent_id)
-        return self._agent_id
+            self._agent_name = agent.name
+            logger.info(
+                "Created Foundry agent %s (version %s)", agent.name, agent.version
+            )
+        return self._agent_name
 
     async def run(
         self,
@@ -72,29 +84,34 @@ class FoundryAgent:
         user_content = self._build_user_message(context)
 
         try:
-            agent_id = await asyncio.to_thread(self._ensure_agent)
+            agent_name = await asyncio.to_thread(self._ensure_agent)
 
-            # Build thread with initial user message
-            thread_opts = AgentThreadCreationOptions(
-                messages=[
-                    ThreadMessageOptions(role=MessageRole.USER, content=user_content),
+            # Create a conversation with the user message
+            conversation = await asyncio.to_thread(
+                self.openai.conversations.create,
+                items=[
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": user_content,
+                    }
                 ],
             )
 
-            # Create thread + run and poll until completion (sync, off-loaded)
-            run = await asyncio.to_thread(
-                self.client.create_thread_and_process_run,
-                agent_id=agent_id,
-                thread=thread_opts,
+            # Invoke the agent via the Responses API
+            response = await asyncio.to_thread(
+                self.openai.responses.create,
+                input=user_content,
+                conversation=conversation.id,
+                extra_body={
+                    "agent_reference": {
+                        "name": agent_name,
+                        "type": "agent_reference",
+                    }
+                },
             )
 
-            # Retrieve the assistant's last text message
-            msg_content = await asyncio.to_thread(
-                self.client.messages.get_last_message_text_by_role,
-                run.thread_id,
-                MessageRole.AGENT,
-            )
-            raw = msg_content.text.value if msg_content and msg_content.text else ""
+            raw = response.output_text or ""
 
             # Parse JSON (strip markdown fences if present)
             text = raw.strip()
@@ -108,18 +125,13 @@ class FoundryAgent:
             result = json.loads(text) if text else {}
 
             if span and tracer:
+                usage = getattr(response, "usage", None)
                 tracer.end_span(
                     span,
-                    tokens_prompt=getattr(run.usage, "prompt_tokens", 0) if run.usage else 0,
-                    tokens_completion=getattr(run.usage, "completion_tokens", 0) if run.usage else 0,
+                    tokens_prompt=getattr(usage, "input_tokens", 0) if usage else 0,
+                    tokens_completion=getattr(usage, "output_tokens", 0) if usage else 0,
                     status="ok",
                 )
-
-            # Clean up thread
-            try:
-                await asyncio.to_thread(self.client.threads.delete, run.thread_id)
-            except Exception:
-                pass
 
             return result
 
@@ -134,11 +146,11 @@ class FoundryAgent:
         return json.dumps(context, indent=2, ensure_ascii=False)
 
     def cleanup(self) -> None:
-        """Delete the hosted agent definition."""
-        if self._agent_id:
+        """Delete all versions of this agent definition."""
+        if self._agent_name:
             try:
-                self.client.delete_agent(self._agent_id)
-                logger.info("Deleted Foundry agent %s", self._agent_id)
+                self.project.agents.delete(self._agent_name)
+                logger.info("Deleted Foundry agent %s", self._agent_name)
             except Exception:
                 pass
-            self._agent_id = None
+            self._agent_name = None

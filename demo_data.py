@@ -155,8 +155,8 @@ PRODUCT_CATALOG = [
 # Smart query examples
 # ---------------------------------------------------------------------------
 SMART_QUERY_EXAMPLES = [
-    "Show me the recycled single-wall carton 300 x 200 x 150 currently active for France and Germany.",
-    "Find the RAJA shipping box mapped from supplier ref SB-300-200-150-K and show the source documents behind it.",
-    "Which product record supports a recyclable claim and is ready for marketplace publication?",
-    "Why did the system map CTN-SW-BR to the RAJA single-wall shipping carton category?",
+    "Enrich the recycled single-wall carton 300×200×150 with full descriptions, benefits, and SEO-ready content for France and Germany.",
+    "Generate multilingual product content for supplier ref SB-300-200-150-K and prepare it for marketplace publication.",
+    "Create e-commerce descriptions, cross-sell suggestions, and compliance-validated content for the double-wall carton 600×400×400.",
+    "Produce SEO metadata and translated product sheets for the white single-wall box 200×150×100, targeting the French and Belgian markets.",
 ]

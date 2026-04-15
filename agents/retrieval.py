@@ -10,7 +10,7 @@ from demo_data import ALL_SOURCES
 
 
 class RetrievalAgent(BaseAgent):
-    name = "foundry_iq_retrieval"
+    name = "foundry-iq-retrieval"
     instructions = """\
 You are a grounded retrieval specialist for RAJA Group.
 

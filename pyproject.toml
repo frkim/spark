@@ -11,8 +11,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "streamlit>=1.40",
     "rich>=13.0",
-    "azure-ai-projects>=1.0.0b7",
-    "azure-ai-agents>=1.1.0",
+    "azure-ai-projects>=2.0.0",
     "azure-identity>=1.19.0",
 ]
 

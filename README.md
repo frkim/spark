@@ -108,7 +108,7 @@ Opens a browser with the full interactive pipeline UI including:
 python main.py
 
 # Direct query
-python main.py "Show me the recycled single-wall carton 300 x 200 x 150 active for France and Germany"
+python main.py "Enrich the recycled single-wall carton 300×200×150 with full descriptions, benefits, and SEO-ready content for France and Germany."
 ```
 
 ## Project Structure
@@ -116,12 +116,14 @@ python main.py "Show me the recycled single-wall carton 300 x 200 x 150 active f
 ```
 ├── app.py                 # Streamlit UI
 ├── main.py                # CLI entry point
+├── _test_pipeline.py      # Pipeline integration test
 ├── config.py              # Settings from .env
 ├── demo_data.py           # Realistic multi-source product data
 ├── pipeline.py            # 8-agent orchestrator (sequential + parallel)
 ├── observability.py       # Trace spans & run metadata
 ├── agents/
 │   ├── base.py            # Base agent (Azure OpenAI wrapper)
+│   ├── base_foundry.py    # Foundry Agent Service backend
 │   ├── query_intake.py    # Agent 1 — Smart Query Intake
 │   ├── retrieval.py       # Agent 2 — Foundry IQ Retrieval
 │   ├── normalization.py   # Agent 3 — Normalization
@@ -134,6 +136,7 @@ python main.py "Show me the recycled single-wall carton 300 x 200 x 150 active f
 ├── requirements.txt
 ├── .env.example
 └── docs/
+    ├── ARCHITECTURE.md
     └── demo_specification.md
 ```
 
@@ -151,7 +154,7 @@ python main.py "Show me the recycled single-wall carton 300 x 200 x 150 active f
 
 ## Smart Query Examples
 
-- *"Show me the recycled single-wall carton 300 x 200 x 150 currently active for France and Germany."*
-- *"Find the RAJA shipping box mapped from supplier ref SB-300-200-150-K and show the source documents behind it."*
-- *"Which product record supports a recyclable claim and is ready for marketplace publication?"*
-- *"Why did the system map CTN-SW-BR to the RAJA single-wall shipping carton category?"*
+- *"Enrich the recycled single-wall carton 300×200×150 with full descriptions, benefits, and SEO-ready content for France and Germany."*
+- *"Generate multilingual product content for supplier ref SB-300-200-150-K and prepare it for marketplace publication."*
+- *"Create e-commerce descriptions, cross-sell suggestions, and compliance-validated content for the double-wall carton 600×400×400."*
+- *"Produce SEO metadata and translated product sheets for the white single-wall box 200×150×100, targeting the French and Belgian markets."*

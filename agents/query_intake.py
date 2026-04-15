@@ -10,7 +10,7 @@ from demo_data import PRODUCT_CATALOG
 
 
 class QueryIntakeAgent(BaseAgent):
-    name = "smart_query_intake"
+    name = "smart-query-intake"
     instructions = """\
 You are the smart query intake specialist for RAJA Group.
 

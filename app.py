@@ -16,7 +16,7 @@ from pipeline import ProductContentPipeline, STEPS
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="RAJA × Microsoft Foundry — Product Content Pipeline",
-    page_icon="📦",
+    page_icon=":package:",
     layout="wide",
 )
 

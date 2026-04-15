@@ -9,7 +9,7 @@ from agents.base import BaseAgent
 
 
 class QualityAgent(BaseAgent):
-    name = "quality_compliance"
+    name = "quality-compliance"
     instructions = """\
 You are a content quality and compliance reviewer for RAJA Group.
 

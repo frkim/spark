@@ -9,7 +9,7 @@ from agents.base import BaseAgent
 
 
 class EnrichmentAgent(BaseAgent):
-    name = "product_enrichment"
+    name = "product-enrichment"
     instructions = """\
 You are a senior product content writer for RAJA Group, specializing in packaging and logistics products.
 
