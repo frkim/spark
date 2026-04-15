@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from openai import AsyncAzureOpenAI
 
-from agents.base import _get_client
+from agents.base import BaseAgent, _get_client
 from agents.enrichment import EnrichmentAgent
 from agents.multilingual import MultilingualAgent
 from agents.normalization import NormalizationAgent
@@ -35,24 +35,57 @@ StepCallback = Callable[[str, str, dict[str, Any] | None], None]
 """(step_key, status, result) — called when a step starts / finishes."""
 
 
+def _make_agent(agent_cls: type, mode: str, client: Any) -> BaseAgent:
+    """Instantiate *agent_cls* using the local BaseAgent or the Foundry backend.
+
+    When mode == "azure", we dynamically create a subclass that inherits from
+    FoundryAgent but keeps the name, instructions, and _build_user_message
+    defined on the original agent class.
+    """
+    if mode == "azure":
+        from agents.base_foundry import FoundryAgent
+
+        foundry_cls = type(
+            agent_cls.__name__ + "Foundry",
+            (FoundryAgent,),
+            {
+                "name": agent_cls.name,
+                "instructions": agent_cls.instructions,
+                "_build_user_message": agent_cls._build_user_message,
+            },
+        )
+        return foundry_cls(client)
+    return agent_cls(client)
+
+
 class ProductContentPipeline:
     """Orchestrates the full RAJA product content enrichment workflow.
 
     Architecture mirrors the Microsoft Agent Framework pattern:
     Sequential stages 1-4 → Concurrent stages 5-6 → Sequential stages 7-8.
+
+    Args:
+        mode: ``"local"`` — agents call Azure OpenAI directly (default).
+              ``"azure"`` — agents run on Azure AI Foundry Agent Service.
     """
 
-    def __init__(self, client: AsyncAzureOpenAI | None = None) -> None:
-        self.client = client or _get_client()
+    def __init__(self, mode: str = "local", client: Any | None = None) -> None:
+        self.mode = mode
 
-        self.intake = QueryIntakeAgent(self.client)
-        self.retrieval = RetrievalAgent(self.client)
-        self.normalization = NormalizationAgent(self.client)
-        self.enrichment = EnrichmentAgent(self.client)
-        self.seo = SEOAgent(self.client)
-        self.multilingual = MultilingualAgent(self.client)
-        self.quality = QualityAgent(self.client)
-        self.publication = PublicationAgent(self.client)
+        if mode == "azure":
+            from agents.base_foundry import _get_foundry_client
+            client = client or _get_foundry_client()
+        else:
+            client = client or _get_client()
+
+        self.intake = _make_agent(QueryIntakeAgent, mode, client)
+        self.retrieval = _make_agent(RetrievalAgent, mode, client)
+        self.normalization = _make_agent(NormalizationAgent, mode, client)
+        self.enrichment = _make_agent(EnrichmentAgent, mode, client)
+        self.seo = _make_agent(SEOAgent, mode, client)
+        self.multilingual = _make_agent(MultilingualAgent, mode, client)
+        self.quality = _make_agent(QualityAgent, mode, client)
+        self.publication = _make_agent(PublicationAgent, mode, client)
 
     async def run(
         self,

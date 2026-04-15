@@ -35,6 +35,30 @@ with st.sidebar:
     st.markdown("## RAJA × Microsoft Foundry")
     st.caption("Intelligent Product Content Pipeline")
     st.divider()
+
+    # --- Execution mode selector ---
+    exec_mode = st.radio(
+        "Agent execution mode",
+        options=["local", "azure"],
+        format_func=lambda x: {
+            "local": "🖥️  Local (Azure OpenAI)",
+            "azure": "☁️  Azure Agent Service",
+        }[x],
+        horizontal=True,
+        key="exec_mode",
+        help=(
+            "**Local** — agents run in this process, calling Azure OpenAI directly.\n\n"
+            "**Azure Agent Service** — agents are hosted in Foundry "
+            "with managed threads and tool execution."
+        ),
+    )
+    if exec_mode == "azure":
+        st.caption(
+            "⚠️ Requires `az login` and Agent Service enabled on your "
+            "Foundry project."
+        )
+
+    st.divider()
     st.markdown("### Smart Query Examples")
     for i, q in enumerate(SMART_QUERY_EXAMPLES):
         if st.button(q, key=f"example_{i}", use_container_width=True):
@@ -98,9 +122,10 @@ if run_btn and query:
     progress_bar = st.progress(0, text="Initialising pipeline…")
     status_ui = st.status("Running pipeline…", expanded=True)
 
-    pipeline = ProductContentPipeline()
+    selected_mode = st.session_state.get("exec_mode", "local")
+    pipeline = ProductContentPipeline(mode=selected_mode)
     tracer = PipelineTracer()
-    ctx: dict[str, Any] = {"run_id": tracer.run_id, "user_query": query}
+    ctx: dict[str, Any] = {"run_id": tracer.run_id, "user_query": query, "execution_mode": selected_mode}
     total = len(STEPS)
     loop = asyncio.new_event_loop()
 
